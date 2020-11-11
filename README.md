@@ -67,6 +67,7 @@
 * counters
     * hot method: invocation counter > invocation threshold
     * hot loops: backedge (loop) counter > backedge threshold
+        * backedge (loop) counter - number of already happened iterations
     * invocation + backedge counter > compile threshold
         * medium hot methods with medium hot loops
     * if counter > threshold -> compile loop
@@ -112,12 +113,61 @@
 
 ## optimizations
 * golden rule of optimization: don't do unnecessary work
+* it is almost never a single optimization but a sequence of optimizations
+        ```
+        public static void x(object) {
+            if (object == null) {
+                System.out.println("a");
+            }
+        }
+        
+        public void y() {
+            x(this);
+        }
+        ```
+        inlining:
+        ```
+        public void y() {
+           if (this == null) {
+               System.out.println("a");
+           }
+        }
+        ```
+        null-check folding:
+        ```
+        public void y() {
+           if (false) {
+               System.out.println("a");
+           }
+        }
+        ```
+        death code termination:
+        ```
+        public void y() { } // method could be removed
+        ```
 * speculative optimizations
 * method inlining
+    * expanding optimizations horizon
+    * mother of all optimizations
+    * "if you remove every other optimization java will be very fast anyway" - Joshua Bloch
     * tuning
         * -XX:+MaxInlineSize=35
         * -XX:+MaxInlineLevel=9
         * -XX:+MaxRecursiveInlineLevel=#
+* constant folding and propagation
+    ```
+    public static long x() {
+        int x = 14;
+        int y = 7 - x / 2;
+        return y * (28 / x + 2);
+    }
+    ```
+    compiled into
+    ```
+    public static long x() {
+        return 0;
+    }
+    ```
 * loop unrolling
 * lock coarsening/eliding
 * coarsening
@@ -200,9 +250,12 @@
     * common intrinsics
         * String#equals
         * most Math methods
-        * System.arraycopy
+        * System.arraycopy - 4 assembler instructions without a loop
+        * Unsafe.storeFence - calls directly CPU instruction
+        * Unsafe.allocateInstance - create instance bypassing constructor
         * Object#hashCode
         * Object#getClass
+    * `@HotSpotIntrinsticCandidate` - extremely popular in math package
 * mismatch and no optimization
     ```
     p c X {
@@ -227,112 +280,7 @@
     }
     ```
     * two checks rather than one
-
-    
-* compilation level (tiered compilation)
-    ![alt text](img/jit/tiered-compilations.png)
-    * 0: interpreter
-    * 1: C1 with full optimization (no profiling)
-    * 2: C1 with invocation and backedge counters
-        * liczy ilosc wywolan metody (invocation counter)
-        * wszystkie miejsca w ktore wracamy z petli (backedge counter) - sprawdza
-        czy czasami petla nie jest goraca
-            * backedge counter - najlatwiej sobie to wyobrazic jako skok do gory
-            petli, kolejna iteracja
-    * 3: C1 with full profiling (level 2 and MethodData)
-        * ile razy weszlismy w ifa a ile razy w else
-        * sprawdza jaki typ zwrociliscie w tym miejscu
-        * sprawdza na jakim typie obiektu wolaliscie te metode (wolalismy na A czy 
-        na obiekcie B ktory dziedziczy po A)
-    * 4: C2
-* ktory kod jest kompilowany?
-    * 2000 invocations for C1
-    * 10000 invocations for c2
-    * trivial methods - tutaj c2 jest w ogóle nie używana
-* escape analysis i registry allocation
-    * inlining: expanding optimizations horizon
-        * matka wszystkich optymalizacji, czyni inne optymalizacje mozliwymi
-        * jakby wywalic wszystko i zostawic inline to i tak byloby szybko Joshua Bloch
-* to nigdy nie jest jedna optymalizacja tylko sekwencja optymalizacji
-    * zaczyna sie mniej wiecej od escape analysis albo inliningu
-    ```
-    p s v x(object) {
-        if (obj == null) {
-            sout('a');
-        }
-    }
-    
-    p v y() {
-        x(this);
-    }
-    ```
-    inlining:
-    ```
-    p v y() {
-       if (obj == null) {
-           sout('a');
-       }
-    }
-    ```
-    null-check folding:
-    ```
-    p v y() {
-       if (false) {
-           sout('a');
-       }
-    }
-    ```
-    death code termination:
-    ```
-    p v y() {
-    }
-    ```
-          
-* constant folding and propagation
-    ```
-    p s l x() {
-        int x = 14;
-        int y = 7 - x / 2;
-        return y * (28 / x + 2); // to wszystko skompilowane do return 0
-    }
-    ```
-* pointer compare
-    ```
-    p s int x(Object obj) {
-        Object o = new Object(); // escape analysis - ten obiekt jest lokalny dla tej metody
-        if (obj == o) {
-            return 0;
-        }
-        return -1;
-    }
-    ```
-    to
-    ```
-    p s int x(Object obj) {
-        return -1;
-    }
-    ```
-* intrinsics - to sa kawalki kodu ktore wiemy jak z gory beda wyglada w assemblerze
-    * np. arraycopy - jestesmy w stanie to zrobic 4 instrukcjami assemblera bez petli
-    * Unsafe.allocateInstance - stworzenie instancji obiektu nie wywolujac konstruktora
-    * Unsafe.storeFence - bezposrednie wywolanie instrukcji CPU
-    * `@HotSpotIntrinsticCandidate` - w pakiecie math jest tego bardzo duzo
-* lock elision
-    ```
-    p s i x(int j) {
-        Object lock = new Object();
-        synchronized (lock) { // to zostanie usuniete
-          j++;
-        }
-        
-        return j;
-    }
-    ```
-* lock coarsening
-  * potrafi tez dwa locki na tym samym monitorze zaraz po sobie zmerdzowac 
-  w jeden duzy lock
-* loop unrolling
-* redundancy removal - jesli wie ze wynik bedzie taki sam to zaladuje go z cache
+  
 * implicit checks eliminations
     ```
     p s int getSize(Collection collection) {
