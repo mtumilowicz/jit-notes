@@ -111,80 +111,98 @@
     * if > 8000 bytecode - always interpreted
 
 ## optimizations
-* speculative optimizations
 * golden rule of optimization: don't do unnecessary work
-* optimization
-    * method inlining
-        * tuning
-            * -XX:+MaxInlineSize=35
-            * -XX:+MaxInlineLevel=9
-            * -XX:+MaxRecursiveInlineLevel=#
-    * loop unrolling
-    * lock coarsening/eliding
-        * coarsening
-            ```
-            public void needsLocks() {
-                for ... {
-                    process(option)
-                }
-            }
-            private synchronized String process(String option) { }  
-            ```
-            compiled into
-            ```
-            public void needsLocks() {
-                synchronized(this) {
-                    for ... {
-                        // inlined
-                    }
-                }
-            }
-            ```
-        * eliding
-            ```
-            p v xxx() {
-                var l = new ArrayList();
-                synchronized(l) { // lock on local variable
-                    for ... l.add(...) // l never escapes this thread
-                }
-            }
-            ```
-            compiled into
-            ```
-            public void xxx() {
-                var l = new ArrayList();
-                for ... l.add(...)
-            }
-            ```
-    * dead code elimination
-    * duplicate code elimination
-    * escape analysis
-        ```
-        p v x() {
-            var f = new Foo("X", "Y");
-            baz(f)
+* speculative optimizations
+* method inlining
+    * tuning
+        * -XX:+MaxInlineSize=35
+        * -XX:+MaxInlineLevel=9
+        * -XX:+MaxRecursiveInlineLevel=#
+* loop unrolling
+* lock coarsening/eliding
+* coarsening
+    ```
+    public void needsLocks() {
+        loop {
+            process()
         }
-      
-        p v baz(Foo f) {
-            sout(f.a)
-            sout(",")
-            quux(f)
+    }
+    private synchronized String process(String option) { }  
+    ```
+    compiled into
+    ```
+    public void needsLocks() {
+        synchronized(this) {
+            loop {
+                // inlined process()
+            }
         }
-        
-        p v quux(Foo f) {
-            sout(f.b)
-            sout("!")
+    }
+    ```
+* eliding
+    ```
+    public void elide() {
+        var l = new ArrayList();
+        synchronized(l) { // lock on local variable
+            loop {
+                 l.add(...) // l never escapes this thread
+            }
         }
-        ```
-        compiled into
-        ```
-        p v inlined() { // don't bother allocating foo object
+    }
+    ```
+    compiled into
+    ```
+    public void elide() {
+        var l = new ArrayList();
+        loop {
+            l.add(...)
+        }
+    }
+    ```
+* dead code elimination
+* duplicate code elimination
+* escape analysis
+    ```
+    public void x() {
+        var f = new Foo("X", "Y");
+        baz(f)
+    }
+  
+    public void baz(Foo f) {
+        sout(f.a)
+        sout(",")
+        quux(f)
+    }
+    
+    public void quux(Foo f) {
+        sout(f.b)
+        sout("!")
+    }
+    ```
+    compiled into
+    ```
+    public void x() { // don't bother allocating foo object
         sout("X")
         sout(",")
         sout("Y")
         sout("!")
-        }
-        ```
+    }
+    ```
+* intrinsic
+    * JVM knows the implementation of an intrinsic method and can substitute the original java-code with 
+    machine-dependent well-optimized instructions (sometimes even with a single processor instruction), 
+    whereas the implementation of a JNI method is unknown to a JVM    
+    * known to the jit
+    * don't inline bytecode
+    * do insert "best" native code
+        * e.g. kernel-level memory operation
+        * e.g. optimized sqrt in machine code
+    * common intrinsics
+        * String#equals
+        * most Math methods
+        * System.arraycopy
+        * Object#hashCode
+        * Object#getClass
 * mismatch and no optimization
     ```
     p c X {
@@ -209,21 +227,7 @@
     }
     ```
     * two checks rather than one
-* intrinsic
-    * JVM knows the implementation of an intrinsic method and can substitute the original java-code with 
-    machine-dependent well-optimized instructions (sometimes even with a single processor instruction), 
-    whereas the implementation of a JNI method is unknown to a JVM    
-    * known to the jit
-    * don't inline bytecode
-    * do insert "best" native code
-        * e.g. kernel-level memory operation
-        * e.g. optimized sqrt in machine code
-    * common intrinsics
-        * String#equals
-        * most Math methods
-        * System.arraycopy
-        * Object#hashCode
-        * Object#getClass
+
     
 * compilation level (tiered compilation)
     ![alt text](img/jit/tiered-compilations.png)
