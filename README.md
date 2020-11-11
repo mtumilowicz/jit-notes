@@ -17,6 +17,7 @@
     * https://blog.takipi.com/java-on-steroids-5-super-useful-jit-optimization-techniques/
     * https://blog.codecentric.de/en/2012/07/useful-jvm-flags-part-1-jvm-types-and-compiler-modes/
     * https://blog.joda.org/2011/08/printcompilation-jvm-flag.html
+    * https://medium.com/@julio.falbo/understand-jvm-and-jit-compiler-part-2-cc6f26fff721
 
 ## general
 * JIT - just in time compiler
@@ -54,93 +55,60 @@
     * cost usually paid while code is interpreted: slows start-up and ramp-up
 
 ## mechanics
-* counters
-    * hot method: invocation counter > invocation threshold
-    * hot loops: backedge (loop) counter > backedge threshold
-    * invocation + backedge counter > compile threshold
-        * medium hot methods with medium hot loops
-    * if counter > threshold -> compile loop
 * tiered
-    * level 0 = interpreter
-    * level 1-3 = c1
-    * level 4 = c2
-* tiered compilation
+    ![alt text](img/tiered_compilation.png)
+    * interpreted -> C1: 5x faster -> C2: 2-10x faster
     * compilation speed: 
         * C1:Client: Fast
         * C2:Server: Slow(4x)
     * execution speed
         * C1:Client: Slow
         * C2:Server: Fast(2x)
-
+* counters
+    * hot method: invocation counter > invocation threshold
+    * hot loops: backedge (loop) counter > backedge threshold
+    * invocation + backedge counter > compile threshold
+        * medium hot methods with medium hot loops
+    * if counter > threshold -> compile loop
+    * C1: 2000 invocations
+    * C2: 10000 invocations
+* Compiler Task Queue
+    * JIT compilation is an asynchronous process
+    * when the JVM decides that a certain block of code should be compiled, that block of code is put in a queue
+        * not strictly first in, first out; methods whose invocation counters are higher have priority
+    * the JVM will continue interpreting the method, and the next time 
+    the method is called, the JVM will execute the compiled version of the method
+    * if method stays in a queue for too long - it will be removed from the queue
+        * maybe we don't need optimization for that method anymore
+    * on-stack replacement (OSR) context
+        * consider a long-running loop
+        * JVM has to have the ability to start executing the compiled version of the loop while 
+        the loop is still running
+        * when the code for the loop has finished compiling, the JVM replaces the code (on the stack), and the 
+        next iteration of the loop will execute the much faster-compiled version of the code
+* made not entrant, made zombie
+    * PrintCompilation output
+    * made not entrant
+        * there could exist many compilations of a single method simultaneosly
+        * if methodA calls methodB, it wants to have the best compilation
+            * if methodA calls methodB for the first time - it asks Call Dispatcher for the best compilation
+                * methodA caches that information
+        * if methodA calls methodB not for the first time and the methodB is made not entrant - methodA calls dispatcher
+            * if there is better compilation, we have two compilations in the memory
+                * in the meantime dispatcher marks slower compilation as made not entrant and redirect calls
+                to the faster one
+    * made zombie - method was made not entrant and no thread has it on its stack
+        * could be removed
 ### c1
 * fast
 * trivial methods, up to 6 bytes (MaxTrivialSize) are inlined by default
     * up to 35 bytes (in bytecode) (MaxInlineSize)
-    * limit inliningu: 9 metod wgłąb
-* linear registry allocation
-* szybki, ale jego kod wynikowy nie jest fantastycznie szybki, 1000x szybszy niz 
-interpretowany
+    * inlining depth limit: 9 methods deep
 
 ### c2
-* c2 - profile until 10k calls
 * slow but generates faster code (compared to C1)
 * by default limited by bytecode size of 325 (FreqInlineSize)
-* jesli przekroczymy 8000 bytow bytecodu - JIT nawet sie nia nie zainteresuje i 
-bedzie zawsze interpetowana
-* uses graph coloring algorithm for registry allocation
-* ADL, Architecture Description Language, language in JVM
-    * template based
-    * przygotowane, gotowe, napisane templaty w kodzie ktore jesli wystapi
-    odpowiednia sekwencja w java AST i java AST bedzie mialo odpowiedni ksztalt
-    ktory pasuje do kodu to wypluje taki kawalek assemblera
-    * jesli twoj kod wyglada w taki sposob to wygeneruj taki kod w assemblerze
-* tiered compilation
-    * by default since java 8 - uses both compilers for better JVM startup time
-    * because JVM suffered from so called warmups, it didn't solve the problem
-    just made it less annoying
-* w momencie w ktorym JVM stwierdzi, ze ta metoda nadaje sie do kompilacji to wrzuca
-ja na kolejke - Compiler Task Queue - a z drugiej strony sa watki ktore zbieraja z kolejki 
-i kompiluja (tyle watkow co polowa korow)
-    * jak dlugo jakas metoda nie schodzi z kolejki to ja wywali (moze ta metoda juz nie jest wazna)
-* compilation attributes
-    * %: the compilation is OSR
-        * zalozenie jest takie, ze musicie wyjsc z metody zeby ja skompilowac
-        bo nie mozemy podmienic tego kodu w trakcie dzialania metody
-            * mozemy dzieki OSR
-        * petle w watkach - while(true)
-        * OSR is useful in situations where you identify a function as "hot" while it is running. 
-        This might not necessarily be because the function gets called frequently; it might be 
-        called only once, but it spends a lot of time in a big loop which could benefit from optimization. 
-        When OSR occurs, the VM is paused, and the stack frame for the target function is replaced by an 
-        equivalent frame which may have variables in different locations.
-    * s: the method is synchronized
-    * !: the method has an exception handler
-    * n: byla juz natywna    
-* JIT not only compiles hot methods but also optimizes hot paths so it speculates
-which part of your code is actually executed
-    * jesli mamy jakiegos elsa, do ktorego nie wchodzimy to go nie skompiluje, ale zostanie
-    tam wlozony uncommon trap
-        * i wtedy made not entrant - JIT mowi nie wchodze juz do skompilowanego 
-        kodu, zaczelo sie zachowywac inaczej
-        * uncommon trap - jak watek tam wdepnie to jest wywlaszczany do interpretera
-        a JIT dostaje informacje, ze sie pomylil
-    * chodzi o to, zeby czas kompilacji nie dominowal czasu aplikacji
-* made not entrant, made zombie
-    * made zombie - metoda była wcześniej made not entrant, ale już żaden
-    wątek nie ma jej na stacku więc można ją wyrzucić do kosza
-    * made not entrant
-        * może istniec wiele kompilacji metody jednoczesnie, jak metodaA chce
-        zawolac metodeB to musi sie dowiedziec ktora kompilacja jest najlepsza
-        * jesli metodaA chce uzyc po raz pierwszy metodyB - pyta sie Call dispatcher - daj mi kompilacje najlepsza
-            * metodaA cacheuje te informacje
-        * i przy nastepnym wywolaniu mamy dwie opcje
-            * skeszowana kompilacja jest juz made no entrant, wiec metodaA widzi ze
-            nie moze jej uzyc - pyta dispatchera
-            * jest juz lepsza kompilacja - wtedy przez chwile mamy w pamieci 2 kompilacje
-            nic sie zlego nie dzieje, metoda bedzie sie uruchamiac po prostu wolniej; w miedzyczasie
-            dispatcher oznacza wolniejsza kompilacje jako made not entrant i przekierowuje na 
-            nowa, szybsza 
-  
+    * if > 8000 bytecode - always interpreted
 
 ## optimizations
 * speculative optimizations
