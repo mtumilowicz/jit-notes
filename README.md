@@ -1,3 +1,5 @@
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 # jit-notes
 * references
     * [JVM JIT for Dummies](https://www.youtube.com/watch?v=0Yud4Q2HEz4)
