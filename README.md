@@ -15,49 +15,43 @@
     * https://stackoverflow.com/questions/9105505/differences-between-just-in-time-compilation-and-on-stack-replacement
     * https://www.slideshare.net/dougqh
     * https://blog.takipi.com/java-on-steroids-5-super-useful-jit-optimization-techniques/
+    * https://blog.codecentric.de/en/2012/07/useful-jvm-flags-part-1-jvm-types-and-compiler-modes/
+    * https://blog.joda.org/2011/08/printcompilation-jvm-flag.html
 
 ## general
-* jit is just complex pattern matchers
-    * douglas hawkins
-* jit compilers consume transient resources (CPU cycles and memory)
-    * from under a milisecond to seonds of compile time, can allocate 100s MBs
-    * takes time to get to "full speed" because there may be 1000s of methods to compile
-* collecting profile data is an overhead
-    * cost usually paid while code is interpreted: slows start-up and ramp-up
 * JIT - just in time compiler
+* "JIT is just complex pattern matchers" - Douglas Hawkins
 * a technique of code compilation during runtime
-    * kod kompilujemy do czegos posredniego (bytecode) i potem kod jest kompilowany
-    do kodu natywnego w momencie jak aplikacja działa
-    * pierwszy raz uzyty w LISP
-* opposed to Ahead Of Time compilation: C, C++, Go, Rust
-    * kompilujemy kod do kodu maszynowego i w tym czasie mamy mase optymalizacji
-* ogromny kawałek kodu w JVM
+    * first usage: LISP
+    * code is compiled to something intermediary (bytecode) and then is compiled to native code 
+    (machine code) during runtime
+* opposed to Ahead Of Time (AOT) compilation: C, C++, Go, Rust
+    * during compilation -> machine code
+    * many optimizations during compilation
+    * restart - we start from the beginning
+        * java 9 - AOTC compiler
+* loop of JIT compilation: interpret -> profile -> compile -> deoptimize -> interpret
+* optimizes two things: methods and loops
+* big part of JVM
     * C2 - 19%
     * C1 - 6,3%
-    * garbage collector - 15%
-* `-Xint` - flaga JVM, tylko kod interpretowany, nie włączają się żadne kompilatory
-* tak naprawdę java jest porównywalnie szybka co cpp, tam gdzie jest naprawdę wolna
- i odstaje to jest IO
-* czemu mamy dwa kompilatory C1 i C2? bo byly dwa zespoly i nie mogli sie dogadac jak
-to trzeba napisac
-* JIT optymalizuje 2 rzeczy: metody i pętle
-   
-* `-XX:+PrintCompilation` - pokazuje moment, w którym JVM zaczyna kompilować kod
-    * "uuuuuu czas najwyższy skompilować ten kod"
-    * pokazuje czas od start upu do czasu skompilowania metody
-    * pokazuje indentyfikator kompilacji (każda kolejna kompilacja zwiększa o 1)
-        * c2 ma swój własny indentyfikator kompilacji
-        * c1 ma swój własny indentyfikator kompilacji
-        * dlatego cyferki moga sie przeplatac
-* the loop: interpret -> profile -> compile -> deoptimize -> interpret
-* AOT
-    * mamy kod i w trakcie compilacji do kodu maszynowego jest on
-    optymalizowany
-    * restart JVM -> zaczynamy wszystko od nowa, String, LinkedList, HashMap...
-        * java 9 ma cos takiego jak AOTC compiler
+    * gc - 15%
+* useful flags
+    * `-Xint` - flag forces the JVM to execute all bytecode in interpreted mode, which comes along with a 
+    considerable slowdown, usually factor 10 or higher
+    * `-XX:+PrintCompilation` - show basic information on when Hotspot compiles methods
+        * shows timespan from start-up to compilation
+        * shows compilation identifier (each compilation bumps identifier by 1)
+            * C1 and C2 have separate identifiers
 * hot spots - programming parts that are executed a lot
     * spring configuration classes - only once during bootstrap
     * rest controller methods - many times
+* jit compilers consume transient resources (CPU cycles and memory)
+    * from under a millisecond to seconds of compile time
+    * can allocate 100s MBs
+    * takes time to get to "full speed" because there may be 1000s of methods to compile
+* collecting profile data is an overhead
+    * cost usually paid while code is interpreted: slows start-up and ramp-up
 
 ## mechanics
 * counters
