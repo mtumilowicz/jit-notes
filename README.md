@@ -63,7 +63,7 @@
 
     ![alt text](img/tiered_compilation.png)
     ![alt text](img/c1_c2_times.png)
-    * C2 compilation is nearly 4 times slower than C1
+    * C2 compilation time is nearly 4 times slower than C1, but the code is 2-10x faster than C1
 * counters
     * hot method: invocation counter > invocation threshold
     * hot loops: backedge (loop) counter > backedge threshold
