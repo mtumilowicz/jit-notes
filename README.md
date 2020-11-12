@@ -60,6 +60,7 @@
 
 ## mechanics
 * tiered
+
     ![alt text](img/tiered_compilation.png)
     ![alt text](img/c1_c2_times.png)
     * C2 compilation is nearly 4 times slower than C1
