@@ -18,6 +18,8 @@
     * https://blog.codecentric.de/en/2012/07/useful-jvm-flags-part-1-jvm-types-and-compiler-modes/
     * https://blog.joda.org/2011/08/printcompilation-jvm-flag.html
     * https://medium.com/@julio.falbo/understand-jvm-and-jit-compiler-part-2-cc6f26fff721
+    * https://stackoverflow.com/questions/36955433/how-does-the-jvm-know-when-to-throw-a-nullpointerexception
+    * https://vlab.cs.ucsb.edu/papers/jitleaks.pdf
 
 ## general
 * JIT - just in time compiler
@@ -145,7 +147,11 @@
         ```
         public void y() { } // method could be removed
         ```
-* speculative optimizations
+* performs speculative optimizations / optimistic compilation
+    * resulting optimized code assumes that the rarely-taken branch or dispatch will 
+    never execute, and the missing code is replaced by a trap that is triggered if 
+    the rare case should occur
+        * known as an uncommon trap
 * method inlining
     * expanding optimizations horizon
     * mother of all optimizations
@@ -250,107 +256,46 @@
     * common intrinsics
         * String#equals
         * most Math methods
+            * `@HotSpotIntrinsticCandidate` - extremely popular in that package
         * System.arraycopy - 4 assembler instructions without a loop
         * Unsafe.storeFence - calls directly CPU instruction
         * Unsafe.allocateInstance - create instance bypassing constructor
         * Object#hashCode
         * Object#getClass
-    * `@HotSpotIntrinsticCandidate` - extremely popular in math package
-* mismatch and no optimization
-    ```
-    p c X {
-        E[] data
-        int size
-        
-        p X (E.. elems) {
-            data = elems
-            size = elems.length
+* NullPointerException digression
+    * deref null value: SEGV -> signal handler -> throw NPE
+        * expensive: 2 x context switch - user -> kernel and kernel -> user
+            * if it happens too often - JIT will insert explicit checks
+            * if very often - JIT will cache NPE as well
+    * JVM implement the null check using virtual memory hardware
+    * JVM arranges that page zero in its virtual address space is mapped to a page that 
+    is unreadable + unwritable
+    * since null is represented as zero, when Java code tries to dereference null this will try 
+    to access a non-addressible page and will lead to the OS delivering a "segfault" signal to the JVM
+    * JVM's segfault signal handler could trap this, figure out where the code was executing, 
+    and create and throw an NPE on the stack of the appropriate thread
+    * without this, every deref should be guarded
+        ```
+        public static int getSize(Collection collection) {
+            return collection.size();
         }
-        
-        forEach(consumer action) {
-            ...
-            for (int i = 0; i < this.size; i++) { // mismatch with this.elementData.length
-            ...
-            if (i >= this.elementData.length) throw new AIOBE();
-            ...
-            action.accept(this.elementData[i])
+        ```
+        should be guarded during compilation
+        ```
+        public static int getSize(Collection collection) {
+            if (collection == null) { 
+                throw new NullPointerException();
             }
-            ...
+            return collection.size(); // assembler: segmentation violation
+            // will crush JVM
         }
-    }
-    ```
-    * two checks rather than one
-  
-* implicit checks eliminations
-    ```
-    p s int getSize(Collection collection) {
-        return collection.size();
-    }
-    ```
-    to tak naprawdę
-    ```
-    p s int getSize(Collection collection) {
-        if (collection == null) { 
-            throw new NullPointerException();
-        }
-        return collection.size(); // w assemblerze jakbys to wywoolal na nullu - segmentation violation
-        // crush calej maszyny
-    }
-    ```
-* unused branch removal - jesli w trakcie profilowania nie wchodzisz do brancza to
-mozesz go usunac
-* optymalizacje
-  * dobry programista - signal handler (nie wstawia ifow)
-      * gdyby jakims cudem udalo nam sie cos skreszowac, wiec instaluje
-      w kernelu signal handler: jak skreszujemy maszyne to ona rzeczywiscie sie
-      kreszuje idzie sygnal do kernela ze nastapil kresz procesu a kernel zamiast
-      ubijac proces odpala signal hendler a signal hendler rzuca wyjatkiem
-      * kosztowny proces, 2 x context switch - z user do jądra i z jądra do usera
-  * jak sie to zdarza zbyt czesto - wstawia checki
-  * a jak bardzo czesto - to skeszuje wyjatki
-  * deref value -SEGV-> signal handler -> throw NPE
-1.
-	```
-	private static void calcLine(int a, int b, int from, int to) {
-		Line l = new Line(a, b);
-		for (int x = from; x <= to; x++) {
-			int y = l.getY(x);
-			System.err.println("(" + x + ", " + y + ")");
-		}
-	}
-	
-	static class Line {
-		public final int a;
-		public final int b;
-		public Line(int a, int b) {
-			this.a = a;
-			this.b = b;
-		}
-	
-		// Inlining
-		public int getY(int x) {
-			return (a * x + b);
-		}
-	}
-	```
-	to
-	```
-	private static void calcLine(int a, int b, int from, int to) {
-		Line l = new Line(a, b);
-		for (int x = from; x <= to; x++) {
-			int y = (l.a * x + l.b);
-			System.err.println("(" + x + ", " + y + ")");
-		}
-	}
-	```
-
+        ```
 ## deoptimizations
-* deoptimizations
 * deoptimization
     * when speculation fails, caught by uncommon trap
     * when CHA (class hierarchy analysis) notices change in class hierarchy
     * when method is no longer "hot", profile traces method frequency invocation
-        * bo liczy sie nie tylko ilosc wywolan, ale tez czestotliwosc
+        * not only counters matters, but frequency of call
 * devirtualization, CHA, class hierarchy analysis
     ```
   abstract class AMF {
