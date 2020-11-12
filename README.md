@@ -30,10 +30,10 @@
     * code is compiled to something intermediary (bytecode) and then is compiled to native code 
     (machine code) during runtime
 * opposed to Ahead Of Time (AOT) compilation: C, C++, Go, Rust
-    * during compilation -> machine code
+    * compilation: directly to machine code
     * many optimizations during compilation
     * restart - we start from the beginning
-        * java 9 - AOTC compiler
+    * java 9 - AOTC compiler
 * loop of JIT compilation: interpret -> profile -> compile -> deoptimize -> interpret
 * optimizes two things: methods and loops
 * big part of JVM
@@ -41,7 +41,7 @@
     * C1 - 6,3%
     * gc - 15%
 * useful flags
-    * `-Xint` - flag forces the JVM to execute all bytecode in interpreted mode, which comes along with a 
+    * `-Xint` - flag forces the JVM to execute all bytecode in the interpreted mode, which comes along with a 
     considerable slowdown, usually factor 10 or higher
     * `-XX:+PrintCompilation` - show basic information on when Hotspot compiles methods
         * shows timespan from start-up to compilation
@@ -54,19 +54,15 @@
     * from under a millisecond to seconds of compile time
     * can allocate 100s MBs
     * takes time to get to "full speed" because there may be 1000s of methods to compile
+    * possible stop-the-world events, especially during deoptimization
 * collecting profile data is an overhead
     * cost usually paid while code is interpreted: slows start-up and ramp-up
 
 ## mechanics
 * tiered
     ![alt text](img/tiered_compilation.png)
-    * interpreted -> C1: 5x faster -> C2: 2-10x faster
-    * compilation speed: 
-        * C1:Client: Fast
-        * C2:Server: Slow(4x)
-    * execution speed
-        * C1:Client: Slow
-        * C2:Server: Fast(2x)
+    ![alt text](img/c1_c2_times.png)
+    * C2 compilation is nearly 4 times slower than C1
 * counters
     * hot method: invocation counter > invocation threshold
     * hot loops: backedge (loop) counter > backedge threshold
@@ -79,28 +75,30 @@
 * Compiler Task Queue
     * JIT compilation is an asynchronous process
     * when the JVM decides that a certain block of code should be compiled, that block of code is put in a queue
-        * not strictly first in, first out; methods whose invocation counters are higher have priority
+        * not strictly first in, first out
+            * methods whose invocation counters are higher have priority
     * the JVM will continue interpreting the method, and the next time 
     the method is called, the JVM will execute the compiled version of the method
     * if method stays in a queue for too long - it will be removed from the queue
         * maybe we don't need optimization for that method anymore
     * on-stack replacement (OSR) context
         * consider a long-running loop
-        * JVM has to have the ability to start executing the compiled version of the loop while 
+        * JVM needs the ability to start executing the compiled version of the loop while 
         the loop is still running
         * when the code for the loop has finished compiling, the JVM replaces the code (on the stack), and the 
         next iteration of the loop will execute the much faster-compiled version of the code
-* made not entrant, made zombie
-    * PrintCompilation output
+* deprecating old optimizations
     * made not entrant
-        * there could exist many compilations of a single method simultaneosly
+        * there could exist many compilations of a single method simultaneously
         * if methodA calls methodB, it wants to have the best compilation
-            * if methodA calls methodB for the first time - it asks Call Dispatcher for the best compilation
+            * first time - it asks Call Dispatcher for the best compilation
                 * methodA caches that information
-        * if methodA calls methodB not for the first time and the methodB is made not entrant - methodA calls dispatcher
-            * if there is better compilation, we have two compilations in the memory
-                * in the meantime dispatcher marks slower compilation as made not entrant and redirect calls
-                to the faster one
+        * subsequent calls
+            * if the methodB is made not entrant - methodA calls dispatcher and gets the best compilation
+            * if the methodB is not yet made not entrant - we have two compilations in the memory
+                * we have to be content with this slower compilation
+                * somewhere in the meantime dispatcher will mark our compilation as made not entrant and 
+                redirect calls to the faster one
     * made zombie - method was made not entrant and no thread has it on its stack
         * could be removed
 ### c1
@@ -158,19 +156,37 @@
     * mother of all optimizations
     * "if you remove every other optimization java will be very fast anyway" - Joshua Bloch
     * tuning
+        * -XX:+MaxTrivialSize=6 // trivial methods are inlined by default
         * -XX:+MaxInlineSize=35
         * -XX:+MaxInlineLevel=9
         * -XX:+MaxRecursiveInlineLevel=#
     * class hierarchy analysis
-        * when dispatching a method call, the JVM checks how many different implementations of that 
-        method has
+        * when dispatching a method call, the JVM checks how many implementations of that method is
             * 1: it’s called monomorphic dispatch
-            * 2: it’s called bimorphic dispatch,
+            * 2: it’s called bimorphic dispatch
             * more: it’s called megamorphic dispatch
         * monomorphic and bimorphic method calls can be inlined, while megamorphic calls can not
-        ```
-      
-        ```
+            ```
+            abstract class AMF {
+                abstract double apply(double i);
+            }
+            
+            class CosF / SinF / SqrtF extends AMF {
+                double apply(double i) {
+                    return Math.cos / sin / sqrt (i)
+                }
+            }
+            
+            static double dol(AMF func, double i) {
+                return func.apply(i);
+            }
+            ```
+            if classloader loaded only SinF - JIT could do inlining
+            ```
+            static double dol(AMF func, double i) {
+                return Math.sin(i);
+            }
+            ```
 * constant folding and propagation
     ```
     public static long x() {
@@ -257,11 +273,9 @@
     ```
 * intrinsic
     * JVM knows the implementation of an intrinsic method and can substitute the original java-code with 
-    machine-dependent well-optimized instructions (sometimes even with a single processor instruction), 
-    whereas the implementation of a JNI method is unknown to a JVM    
+    machine-dependent well-optimized instructions (sometimes even with a single processor instruction)
     * known to the jit
-    * don't inline bytecode
-    * do insert "best" native code
+    * don't inline bytecode, do insert "best" native code
         * e.g. kernel-level memory operation
         * e.g. optimized sqrt in machine code
     * common intrinsics
@@ -274,33 +288,33 @@
         * Object#hashCode
         * Object#getClass
 * NullPointerException digression
-    * deref null value: SEGV -> signal handler -> throw NPE
-        * expensive: 2 x context switch - user -> kernel and kernel -> user
+    * deref null reference: SEGV -> signal handler -> throw NPE
+        * expensive operation: 2 x context switch - user -> kernel and kernel -> user
             * if it happens too often - JIT will insert explicit checks
             * if very often - JIT will cache NPE as well
     * JVM implement the null check using virtual memory hardware
-    * JVM arranges that page zero in its virtual address space is mapped to a page that 
-    is unreadable + unwritable
-    * since null is represented as zero, when Java code tries to dereference null this will try 
-    to access a non-addressible page and will lead to the OS delivering a "segfault" signal to the JVM
-    * JVM's segfault signal handler could trap this, figure out where the code was executing, 
-    and create and throw an NPE on the stack of the appropriate thread
-    * without this, every deref should be guarded
-        ```
-        public static int getSize(Collection collection) {
-            return collection.size();
-        }
-        ```
-        should be guarded during compilation
-        ```
-        public static int getSize(Collection collection) {
-            if (collection == null) { 
-                throw new NullPointerException();
+        * JVM arranges that page zero in its virtual address space is mapped to a page that 
+        is unreadable + unwritable
+        * since null is represented as zero, when Java code tries to dereference null this will try 
+        to access a non-addressible page and will lead to the OS delivering a "segfault" signal to the JVM
+        * JVM's segfault signal handler could trap this, figure out where the code was executing, 
+        and create and throw an NPE on the stack of the appropriate thread
+        * without this, every deref should be guarded
+            ```
+            public static int getSize(Collection collection) {
+                return collection.size();
             }
-            return collection.size(); // assembler: segmentation violation
-            // will crush JVM
-        }
-        ```
+            ```
+            should be guarded during compilation
+            ```
+            public static int getSize(Collection collection) {
+                if (collection == null) { 
+                    throw new NullPointerException();
+                }
+                return collection.size(); // assembler: segmentation violation
+                // will crush JVM
+            }
+            ```
 ## deoptimizations
 * deoptimization
     * when speculation fails, caught by uncommon trap
@@ -308,30 +322,15 @@
     * when method is no longer "hot", profile traces method frequency invocation
         * not only counters matters, but frequency of call
 * stop the world events
-* devirtualization, CHA, class hierarchy analysis
+* example - class hierarchy analysis deoptimization
     ```
-    abstract class AMF {
-        abstract double apply(double i);
-    }
-  
-    class CosF / SinF / SqrtF extends AMF {
-        double apply(double i) {
-            return Math.cos / sin / sqrt (i)
-        }
-    }
-  
-    static double dol(AMF func, double i) {
-        return func.apply(i);
+    static double dol(AMF func, double i) { // AMF implementations: SinF
+        return Math.sin(i); // inlined as monomoprhic call
     }
     ```
-    if classloader loaded only SinF - JIT could do inlining
-    ```
-    static double dol(AMF func, double i) {
-        return Math.sin(i);
-    }
-    ```
-    suppose that classloader loads CosF - JIT has to invalidate all methods optimized based on CHA; but
-    simply loading a class by classloader doesn't mean that the class will be used
+    * suppose that classloader loads another AMF implementation: CosF
+        * JIT has to invalidate all methods optimized based on CHA
+        * but simply loading a class by classloader doesn't mean that the class will be used
     ```
     static double dol(AMF func, double i) {
         if (func instanceof SincF)
