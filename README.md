@@ -20,6 +20,7 @@
     * https://medium.com/@julio.falbo/understand-jvm-and-jit-compiler-part-2-cc6f26fff721
     * https://stackoverflow.com/questions/36955433/how-does-the-jvm-know-when-to-throw-a-nullpointerexception
     * https://vlab.cs.ucsb.edu/papers/jitleaks.pdf
+    * https://advancedweb.hu/jvm-jit-optimization-techniques/
 
 ## general
 * JIT - just in time compiler
@@ -160,6 +161,16 @@
         * -XX:+MaxInlineSize=35
         * -XX:+MaxInlineLevel=9
         * -XX:+MaxRecursiveInlineLevel=#
+    * class hierarchy analysis
+        * when dispatching a method call, the JVM checks how many different implementations of that 
+        method has
+            * 1: it’s called monomorphic dispatch
+            * 2: it’s called bimorphic dispatch,
+            * more: it’s called megamorphic dispatch
+        * monomorphic and bimorphic method calls can be inlined, while megamorphic calls can not
+        ```
+      
+        ```
 * constant folding and propagation
     ```
     public static long x() {
@@ -296,49 +307,46 @@
     * when CHA (class hierarchy analysis) notices change in class hierarchy
     * when method is no longer "hot", profile traces method frequency invocation
         * not only counters matters, but frequency of call
+* stop the world events
 * devirtualization, CHA, class hierarchy analysis
     ```
-  abstract class AMF {
-    abstract double apply(double i);
-  }
-  
-  class CosF / SinF / SqrtF extends AMF {
-    double apply(double i) {
-        return Math.cos / sin / sqrt (i)
+    abstract class AMF {
+        abstract double apply(double i);
     }
-  }
-  ```
-  oraz kod
-  ```
-  s d dol(AMF func, double i) {
-    return func.apply(i);
-  }
-  ```
-  jeśli classloader zaladuje tylko i wylacznie sinus, to JIT moze spokojnie zrobic
-  inlining
-  ```
-  s d dol(AMF func, double i) {
-    return Math.sin(i);
-  }
-  ```
-  classloader laduje cosinus - jit musi zinwalidowac wszystkie funkcje ktore zoptymalizowal
-  bazujac na CHA (stop the world); ale to ze classloader zaladowal to nie znaczy ze bedziemy 
-  go uzywac, wiec
-  ```
-  s d dol(AMF func, double i) {
-      if (... instanceof SincF)
+  
+    class CosF / SinF / SqrtF extends AMF {
+        double apply(double i) {
+            return Math.cos / sin / sqrt (i)
+        }
+    }
+  
+    static double dol(AMF func, double i) {
+        return func.apply(i);
+    }
+    ```
+    if classloader loaded only SinF - JIT could do inlining
+    ```
+    static double dol(AMF func, double i) {
         return Math.sin(i);
-      else uncommon_trap;
-  ```
-  jesli zaczniemy uzywac cosinusa
-  ```
-  s d dol(AMF func, double i) {
-      if (... instanceof SincF)
-        return Math.sin(i);
-      else if (... instanceof CosF)
-        return Math.cos(i);
-      else uncommon_trap;
-  ```
+    }
+    ```
+    suppose that classloader loads CosF - JIT has to invalidate all methods optimized based on CHA; but
+    simply loading a class by classloader doesn't mean that the class will be used
+    ```
+    static double dol(AMF func, double i) {
+        if (func instanceof SincF)
+            return Math.sin(i);
+        else uncommon_trap;
+    ```
+    when we start to use CosF - we trigger the uncommon trap and decompilation
+    ```
+    static double dol(AMF func, double i) {
+        if (func instanceof SincF)
+            return Math.sin(i);
+        else if (func instanceof CosF)
+            return Math.cos(i);
+        else uncommon_trap;
+    ```
 
 
 ## preferences
