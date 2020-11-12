@@ -11,6 +11,7 @@
     * [WJUG #257 - Krzysztof Ślusarski - Just-In-Time compiler - ukryty "przyjaciel"](https://www.youtube.com/watch?v=f8zaYDJctTA)
     * [An Introduction to JVM Performance](https://www.youtube.com/watch?v=hjpzLXoUu1Y)
     * [Douglas Hawkins playlist](https://www.youtube.com/playlist?list=PLDnxsaeAegRduDndE6P1MUYRFYoYhGvsV)
+    * [Twitter's quest for a wholly Graal runtime - Voxxed Days Singapore 2019](https://www.youtube.com/watch?v=TbUahT0jet0)
     * https://stackoverflow.com/questions/56698783/what-is-the-difference-between-java-intrinsic-and-native-methods
     * https://stackoverflow.com/questions/9105505/differences-between-just-in-time-compilation-and-on-stack-replacement
     * https://www.slideshare.net/dougqh
@@ -110,6 +111,10 @@
 
 ### c2
 * slow but generates faster code (compared to C1)
+* very complex
+* learning curve way too steep
+* the last few years no new major optimization
+* reached its end-of-life already years ago
 * by default limited by bytecode size of 325 (FreqInlineSize)
     * if > 8000 bytecode - always interpreted
 
