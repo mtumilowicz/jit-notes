@@ -100,7 +100,7 @@
         * subsequent calls
             * if the methodB is made not entrant - methodA calls dispatcher and gets the best compilation
             * if the methodB is not yet made not entrant - we have two compilations in the memory
-                * we have to be content with this slower compilation
+                * we have to accept the slower compilation
                 * somewhere in the meantime dispatcher will mark our compilation as made not entrant and 
                 redirect calls to the faster one
     * made zombie - method was made not entrant and no thread has it on its stack
@@ -123,6 +123,7 @@
 ## optimizations
 * golden rule of optimization: don't do unnecessary work
 * it is almost never a single optimization but a sequence of optimizations
+
         ```
         public static void x(object) {
             if (object == null) {
