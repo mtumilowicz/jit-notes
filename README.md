@@ -124,37 +124,37 @@
 * golden rule of optimization: don't do unnecessary work
 * it is almost never a single optimization but a sequence of optimizations
 
-        ```
-        public static void x(object) {
-            if (object == null) {
-                System.out.println("a");
-            }
+    ```
+    public static void x(Object object) {
+        if (object == null) {
+            System.out.println("a");
         }
-        
-        public void y() {
-            x(this);
-        }
-        ```
-        inlining:
-        ```
-        public void y() {
-           if (this == null) {
-               System.out.println("a");
-           }
-        }
-        ```
-        null-check folding:
-        ```
-        public void y() {
-           if (false) {
-               System.out.println("a");
-           }
-        }
-        ```
-        death code termination:
-        ```
-        public void y() { } // method could be removed
-        ```
+    }
+
+    public void y() {
+        x(this);
+    }
+    ```
+    inlining:
+    ```
+    public void y() {
+       if (this == null) {
+           System.out.println("a");
+       }
+    }
+    ```
+    null-check folding:
+    ```
+    public void y() {
+       if (false) {
+           System.out.println("a");
+       }
+    }
+    ```
+    death code termination:
+    ```
+    public void y() { } // method could be removed
+    ```
 * performs speculative optimizations / optimistic compilation
     * resulting optimized code assumes that the rarely-taken branch or dispatch will 
     never execute, and the missing code is replaced by a trap that is triggered if 
@@ -297,27 +297,17 @@
         * Object#hashCode
         * Object#getClass
 * NullPointerException digression
-    * deref null reference: SEGV -> signal handler -> throw NPE
-        * expensive operation: 2 x context switch - user -> kernel and kernel -> user
-            * if it happens too often - JIT will insert explicit checks
-            * if very often - JIT will cache NPE as well
     * JVM implement the null check using virtual memory hardware
         * JVM arranges that page zero in its virtual address space is mapped to a page that 
         is unreadable + unwritable
         * since null is represented as zero, when Java code tries to dereference null this will try 
         to access a non-addressible page and will lead to the OS delivering a "segfault" signal to the JVM
-        * JVM's segfault signal handler could trap this, figure out where the code was executing, 
+        * JVM's segfault signal (SEGV) handler could trap this, figure out where the code was executing,
         and create and throw an NPE on the stack of the appropriate thread
         * without this, every deref should be guarded
             ```
             public static int getSize(Collection collection) {
-                return collection.size();
-            }
-            ```
-            should be guarded during compilation
-            ```
-            public static int getSize(Collection collection) {
-                if (collection == null) { 
+                if (collection == null) { // othervise checks like that should be added during compilation
                     throw new NullPointerException();
                 }
                 return collection.size(); // assembler: segmentation violation
@@ -340,21 +330,21 @@
     * suppose that classloader loads another AMF implementation: CosF
         * JIT has to invalidate all methods optimized based on CHA
         * but simply loading a class by classloader doesn't mean that the class will be used
-    ```
-    static double dol(AMF func, double i) {
-        if (func instanceof SincF)
-            return Math.sin(i);
-        else uncommon_trap;
-    ```
-    when we start to use CosF - we trigger the uncommon trap and decompilation
-    ```
-    static double dol(AMF func, double i) {
-        if (func instanceof SincF)
-            return Math.sin(i);
-        else if (func instanceof CosF)
-            return Math.cos(i);
-        else uncommon_trap;
-    ```
+            ```
+            static double dol(AMF func, double i) {
+                if (func instanceof SincF)
+                    return Math.sin(i);
+                else uncommon_trap;
+            ```
+            when we start to use CosF - we trigger the uncommon trap and decompilation
+            ```
+            static double dol(AMF func, double i) {
+                if (func instanceof SincF)
+                    return Math.sin(i);
+                else if (func instanceof CosF)
+                    return Math.cos(i);
+                else uncommon_trap;
+            ```
 
 ## preferences
 * jit likes
